@@ -58,7 +58,6 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         unsigned char sequenceNumber = 0;;
 
         unsigned char* fullData = (unsigned char*) malloc (sizeof (unsigned char) * fileSize);
-        fread(fullData, sizeof (unsigned char), fileSize, fd);
 
         long int bytes = fileSize;
 
@@ -101,13 +100,13 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         unsigned char* packet = (unsigned char *) malloc(MAX_PAYLOAD_SIZE);
 
         int size = -1;
-        while (controlPacketSize = llread(startControlPacket) < 0);
+        while ((controlPacketSize = llread(packet)) < 0);
 
-        unsigned long int fileSize = 0;
+        unsigned long int newFileSize = 0;
 
-        unsigned char *fileName = processControlPacket(packet, size, &fileSize);
+        unsigned char *fileName = processControlPacket(packet, size, &newFileSize);
 
-        FILE *file = fopen((char *) fileName, "wb+");
+        FILE *newFile = fopen((char *) fileName, "wb+");
 
         while(1) {
 
@@ -120,14 +119,14 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
                 processDataPacket(packet, size, buffer);
 
-                fwrite(buffer, sizeof(unsigned char), size - 4, file);
+                fwrite(buffer, sizeof(unsigned char), size - 4, newFile);
 
                 free(buffer);
             }
             else continue;
         }
 
-        fclose(file);
+        fclose(newFile);
         break;
     default:
         exit(-1);
@@ -215,7 +214,7 @@ unsigned char * buildControlPacket(const unsigned int c, const char* filename, l
     return controlPacket;
 }
 
-unsigned char buildDataPacket(unsigned char sequenceNumber, unsigned char *data, long int dataSize, unsigned int *size) {
+unsigned char *buildDataPacket(unsigned char sequenceNumber, unsigned char *data, long int dataSize, int *size) {
     
     *size = 4 + dataSize; 
 
@@ -235,8 +234,8 @@ unsigned char buildDataPacket(unsigned char sequenceNumber, unsigned char *data,
 }
 
 void processDataPacket (unsigned char* packet, int size, unsigned char* buffer) {
-    unsigned char controlField = packet[0];
-    unsigned char sequenceNumber = packet[1];
+    //unsigned char controlField = packet[0];
+    //unsigned char sequenceNumber = packet[1];
     unsigned char l2 = packet[2];
     unsigned char l1 = packet[3];
     int length = 256 * l2 + l1;

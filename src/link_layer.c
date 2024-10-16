@@ -22,7 +22,7 @@ int llopen(LinkLayer connectionParameters)
     if (serialPortFd < 0) return -1;
 
     LinkLayerState linkLayerState = START;
-    unsigned char byteRead;
+    char byteRead;
 
     nRetransmissions = connectionParameters.nRetransmissions;
     timeout = connectionParameters.timeout;
@@ -43,7 +43,7 @@ int llopen(LinkLayer connectionParameters)
             //perguntar ao professor se devia guardar os bytes do A e C e fazer o check com o BCC
             // ou se ta bom assim
             while (!alarmPlaying && linkLayerState != STOP) {
-                nrBytesRead = readByte(byteRead);
+                nrBytesRead = readByte(&byteRead);
 
                 if (nrBytesRead < 0) {
                     //printf ("An error occurred while reading the Receiver Reply\n");
@@ -85,7 +85,7 @@ int llopen(LinkLayer connectionParameters)
 
     case LlRx:
         while (linkLayerState != STOP) {
-            nrBytesRead = readByte(byteRead);
+            nrBytesRead = readByte(&byteRead);
             if (nrBytesRead < 0) {
                 //printf ("An error occurred while reading the SET frame\n");
                 break;
@@ -135,8 +135,9 @@ int llopen(LinkLayer connectionParameters)
 ////////////////////////////////////////////////
 int llwrite(const unsigned char *buf, int bufSize)
 {
+    printf("coiso 1\n");
     int frameSize = bufSize + 6;
-    unsigned char *informationFrame = (unsigned char *)malloc(frameSize);
+    char *informationFrame = (char *)malloc(frameSize);
     if (!informationFrame) {
         return -1; 
     }
@@ -154,7 +155,7 @@ int llwrite(const unsigned char *buf, int bufSize)
         return -1;
     }
 
-
+    printf("coiso 2\n");
     memcpy(informationFrame + 4, stuffedBuf, stuffedSize);
 
  
@@ -172,7 +173,7 @@ int llwrite(const unsigned char *buf, int bufSize)
         return -1;
     }
 
- 
+    printf("coiso 3\n");
     memcpy(informationFrame + 4 + stuffedSize, stuffedBCC2, newStuffedSize);
     informationFrame[4 + stuffedSize + newStuffedSize] = FLAG;
 
@@ -183,7 +184,7 @@ int llwrite(const unsigned char *buf, int bufSize)
     int currentTransmission = 0;
     int rejected = 0, accepted = 0;
 
- 
+    printf("coiso 4\n");
     while (currentTransmission < nRetransmissions) {
         alarmPlaying = FALSE;
         alarm(timeout);
@@ -229,12 +230,13 @@ int llwrite(const unsigned char *buf, int bufSize)
 ////////////////////////////////////////////////
 int llread(unsigned char *packet)
 {
-    unsigned char byteRead,c;
+    char byteRead;
+    unsigned char c;
     int i = 0;
     LinkLayerState linkLayerState = START;
 
     while (linkLayerState != STOP && !alarmPlaying) {
-        int nrBytesRead = readByte(byteRead);
+        int nrBytesRead = readByte(&byteRead);
         if (nrBytesRead < 0) {
             //printf ("An error occurred while reading the SET frame\n");
             break;
@@ -242,13 +244,16 @@ int llread(unsigned char *packet)
         else if (nrBytesRead > 0) {
             switch (linkLayerState) {
                 case START:
+                    printf("start\n");
                     if (byteRead == FLAG) linkLayerState = FLAG_RCV;
                     break;
                 case FLAG_RCV:
+                    printf("flag\n");
                     if (byteRead == A_ER) linkLayerState = A_RCV;
                     else if (byteRead != FLAG) linkLayerState = START;
                     break;
                 case A_RCV:
+                    printf("A_RCV\n");
                     if (byteRead == C_N(0) || byteRead == C_N(1)) {
                         linkLayerState = C_RCV;
                         c = byteRead;
@@ -262,11 +267,13 @@ int llread(unsigned char *packet)
                     }
                     break;
                 case C_RCV:
-                    if (byteRead == (A_RE ^ c)) linkLayerState = READ_DATA;
+                    printf("C_RCV: %d\n", byteRead);
+                    if (byteRead == (A_ER ^ c)) linkLayerState = READ_DATA;
                     else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
                     else linkLayerState = START;
                     break;
                 case READ_DATA:
+                    printf("READ_DATA\n");
                     if (byteRead == ESC) {
                         linkLayerState = STUFFED_BYTE;
                     } else if (byteRead == FLAG) {
@@ -280,14 +287,15 @@ int llread(unsigned char *packet)
                         
 
                         if (bcc2 == acc){
+                            printf("i entered here, i = %d\n", i);
                             linkLayerState = STOP;
-                            sendSupervisionFrame(A_RE, C_RR(tramaRx));
+                            sendFrameS(A_RE, C_RR(tramaRx));
                             tramaRx = (tramaRx + 1)%2;
                             return i; 
 
                         } else{
                             printf("Error: retransmition\n");
-                            sendSupervisionFrame(A_RE, C_REJ(tramaRx));
+                            sendFrameS(A_RE, C_REJ(tramaRx));
                             return -1;
                         }
 
@@ -298,6 +306,7 @@ int llread(unsigned char *packet)
                     }
                     break;
                 case STUFFED_BYTE:
+                    printf("stuffed\n");
                     packet[i++] = byteRead ^ 0x20;
                     linkLayerState = READ_DATA;
                     break;
@@ -320,7 +329,7 @@ int llclose(int showStatistics)
     
     (void) signal(SIGALRM, alarmHandler);
     LinkLayerState linkLayerState = START;
-    unsigned char byteRead;
+    char byteRead;
     
     int nrBytesRead = 0; 
 
@@ -330,7 +339,7 @@ int llclose(int showStatistics)
         alarmPlaying = FALSE;
 
         while (!alarmPlaying && linkLayerState != STOP) {
-            int nrBytesRead = readByte(byteRead);
+            nrBytesRead = readByte(&byteRead);
             if (nrBytesRead < 0) {
                 //printf ("An error occurred while reading the SET frame\n");
                 break;
@@ -375,6 +384,7 @@ int llclose(int showStatistics)
 
 void alarmHandler(int signal) {
     alarmPlaying = TRUE;
+    printf("alarm played\n");
 }
 
 unsigned char *byteStuffing(const unsigned char *buf, int bufSize, int *newSize) {
@@ -404,16 +414,17 @@ unsigned char *byteStuffing(const unsigned char *buf, int bufSize, int *newSize)
 }
 
 int sendFrameS (unsigned char a, unsigned char c) {
-    unsigned char sFrame[5] = {FLAG, a, c, BCC(a,c), FLAG};
+    char sFrame[5] = {FLAG, a, c, BCC(a,c), FLAG};
     return writeBytes(sFrame, 5);
 }
 
 unsigned char readCFrame() {
-    unsigned char byteRead, c = 0;
+    char byteRead;
+    unsigned char c = 0;
     LinkLayerState linkLayerState = START;
 
     while (linkLayerState != STOP && !alarmPlaying) {
-        int nrBytesRead = readByte(byteRead);
+        int nrBytesRead = readByte(&byteRead);
         if (nrBytesRead < 0) {
             //printf ("An error occurred while reading the SET frame\n");
             break;
