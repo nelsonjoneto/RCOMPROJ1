@@ -3,8 +3,7 @@
 #include "link_layer.h"
 #include "serial_port.h"
 
-// MISC
-#define _POSIX_SOURCE 1 // POSIX compliant source
+#define _POSIX_SOURCE 1
 
 ////////////////////////////////////////////////
 // LLOPEN
@@ -18,111 +17,49 @@ unsigned char tramaRx = 1;
 
 LinkLayerRole role;
 
+int totalRetransmissions = 0;
+
+
 int llopen(LinkLayer connectionParameters)
 {
     int serialPortFd  = openSerialPort(connectionParameters.serialPort, connectionParameters.baudRate);
     if (serialPortFd < 0) return -1;
 
     LinkLayerState linkLayerState = START;
-    char byteRead;
 
     nRetransmissions = connectionParameters.nRetransmissions;
     timeout = connectionParameters.timeout;
-    
-    int nrBytesRead = 0; 
+
+    int retransmissions = 0;
 
     role = connectionParameters.role;
+
 
     switch (connectionParameters.role)
     {
     case LlTx:
-
+        unsigned char cValuesTx[] = {C_UA};
         (void) signal(SIGALRM, alarmHandler);
-        while (linkLayerState != STOP && connectionParameters.nRetransmissions > 0) {
+        while (linkLayerState != STOP && retransmissions < nRetransmissions) {
             sendFrameS(A_ER, C_SET);
             alarm(connectionParameters.timeout);
             alarmPlaying = FALSE;
 
-
-            //perguntar ao professor se devia guardar os bytes do A e C e fazer o check com o BCC
-            // ou se ta bom assim
             while (!alarmPlaying && linkLayerState != STOP) {
-                nrBytesRead = readByte(&byteRead);
+                readSupervisionFrame(&linkLayerState, A_ER, cValuesTx, 1);
 
-                if (nrBytesRead < 0) {
-                    //printf ("An error occurred while reading the Receiver Reply\n");
-                    break;
-                }
-                else if (nrBytesRead > 0) {
-                    switch (linkLayerState)
-                    {
-                    case START:
-                        if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                        break;
-                    case FLAG_RCV:
-                        if (byteRead == A_ER) linkLayerState = A_RCV;
-                        else if (byteRead != FLAG) linkLayerState = START;
-                        break;
-                    case A_RCV:
-                        if (byteRead == C_UA) linkLayerState = C_RCV;
-                        else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                        else linkLayerState = START;
-                        break;
-                    case C_RCV:
-                        if (byteRead == BCC(A_ER, C_UA)) linkLayerState = BCC1_OK;
-                        else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                        else linkLayerState = START;
-                        break;
-                    case BCC1_OK:
-                        if (byteRead == FLAG) linkLayerState = STOP;
-                        else linkLayerState = START;
-                        break;    
-                    default:
-                        break;
-                    }
-                }
             }
-            connectionParameters.nRetransmissions--;
+            if (alarmPlaying) {
+                retransmissions++;
+            }
         }
+        totalRetransmissions += retransmissions;
         if (linkLayerState != STOP) return -1;
         break;
 
     case LlRx:
-        while (linkLayerState != STOP) {
-            nrBytesRead = readByte(&byteRead);
-            if (nrBytesRead < 0) {
-                //printf ("An error occurred while reading the SET frame\n");
-                break;
-            }
-            else if (nrBytesRead > 0) {
-                switch (linkLayerState)
-                {
-                case START:
-                    if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                    break;
-                case FLAG_RCV:
-                    if (byteRead == A_ER) linkLayerState = A_RCV;
-                    else if (byteRead != FLAG) linkLayerState = START;
-                    break;
-                case A_RCV:
-                    if (byteRead == C_SET) linkLayerState = C_RCV;
-                    else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                    else linkLayerState = START;
-                    break;
-                case C_RCV:
-                    if (byteRead == BCC(A_ER, C_SET)) linkLayerState = BCC1_OK;
-                    else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                    else linkLayerState = START;
-                    break;
-                case BCC1_OK:
-                    if (byteRead == FLAG) linkLayerState = STOP;
-                    else linkLayerState = START;
-                    break;    
-                default:
-                    break;
-                }
-            }
-        }
+        unsigned char cValuesRx[] = {C_SET};
+        readSupervisionFrameRx(&linkLayerState, A_ER, cValuesRx, 1);
         sendFrameS(A_ER,C_UA);
         break;
     default:
@@ -141,7 +78,7 @@ int llwrite(const unsigned char *buf, int bufSize)
 {
 
     int frameSize = 2 * bufSize + 7;
-    char *informationFrame = (char *)malloc(frameSize);
+    unsigned char *informationFrame = (unsigned char *)malloc(frameSize);
     if (!informationFrame) {
         printf("Couldn't allocate memory for the information frame\n");
         return -1; 
@@ -185,64 +122,62 @@ int llwrite(const unsigned char *buf, int bufSize)
     free(stuffedBuf);
     free(stuffedBCC2);
 
-    int currentTransmission = 0;
-    int rejected = 0, accepted = 0;
+    int retransmissions = 0;
+    
 
-    while (currentTransmission < nRetransmissions) {
-        alarmPlaying = FALSE;
+    LinkLayerState linkLayerState = START;
+    unsigned char cValues[] = {C_RR(0), C_RR(1), C_REJ(0), C_REJ(1), C_DISC};
+    unsigned char c = 0;
+    printf("New data transmission\n");
+    while (retransmissions < nRetransmissions) {
         alarm(timeout);
-        rejected = 0;
-        accepted = 0;
+        alarmPlaying = FALSE;
 
-        while (!alarmPlaying && !rejected && !accepted) {
-
-            if (writeBytes(informationFrame, frameSize) < 0) {
-                free(informationFrame);
-                return -1;
-            }
-
-
-            unsigned char c = readCFrame();
-
+        if (writeBytes(informationFrame, frameSize) < 0) {
+            free(informationFrame);
+            return -1;
+        }
+        
+        while (!alarmPlaying) {
+            unsigned char c = readSupervisionFrame(&linkLayerState, A_ER, cValues, 5);
             if (c == C_REJ(0) || c == C_REJ(1)) {
-                rejected = 1;
-            } else if (c == C_RR(0) || c == C_RR(1)) {
-                accepted = 1; 
+                break;
+            } else if (c == C_RR(0) || c == C_RR(1)) { 
                 tramaTx = (tramaTx == 0) ? 1 : 0; 
-            }
-            else continue;
-        }
 
-        if (accepted) {
-            break;
+                totalRetransmissions += retransmissions;
+                free(informationFrame);
+                return frameSize;
+
+            } else continue;
         }
-        currentTransmission++;
+        printf("Retransmitting frame\n");
+        retransmissions++;
+
     }
+    totalRetransmissions += retransmissions;
     
     free(informationFrame);
-    if (accepted) {
-        return frameSize;
-    } 
-    else {
-        llclose(-1);
-        return -1;
-    } 
+    return -1;
 }
+
 
 ////////////////////////////////////////////////
 // LLREAD
 ////////////////////////////////////////////////
 int llread(unsigned char *packet)
 {
-    char byteRead;
+    LinkLayerState linkLayerState;
+    unsigned char byteRead;
     unsigned char c;
     int i = 0;
-    LinkLayerState linkLayerState = START;
+    linkLayerState = START;
+
+
 
     while (linkLayerState != STOP) {
         int nrBytesRead = readByte(&byteRead);
         if (nrBytesRead < 0) {
-            //printf ("An error occurred while reading the SET frame\n");
             break;
         }
         else if (nrBytesRead > 0) {
@@ -322,55 +257,27 @@ int llread(unsigned char *packet)
 int llclose(int showStatistics)
 {   
     LinkLayerState linkLayerState = START;
-    char byteRead;
-    
-    int nrBytesRead = 0;
+    unsigned char cValues[1];
+
+    int retransmissions = 0;
 
     switch (role)
     {
     case LlTx:
-
+        cValues[0] = C_DISC;
         (void) signal(SIGALRM, alarmHandler);
-        while (nRetransmissions > 0 && linkLayerState != STOP) {
+        while (retransmissions < nRetransmissions && linkLayerState != STOP) {
             sendFrameS(A_ER, C_DISC);
             alarm(timeout);
             alarmPlaying = FALSE;
 
             while (!alarmPlaying && linkLayerState != STOP) {
-                nrBytesRead = readByte(&byteRead);
-                if (nrBytesRead < 0) {
-                    //printf ("An error occurred while reading the SET frame\n");
-                    break;
-                } else if (nrBytesRead > 0) {
-                    switch (linkLayerState)
-                        {
-                        case START:
-                            if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                            break;
-                        case FLAG_RCV:
-                            if (byteRead == A_RE) linkLayerState = A_RCV;
-                            else if (byteRead != FLAG) linkLayerState = START;
-                            break;
-                        case A_RCV:
-                            if (byteRead == C_DISC) linkLayerState = C_RCV;
-                            else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                            else linkLayerState = START;
-                            break;
-                        case C_RCV:
-                            if (byteRead == BCC(A_RE, C_DISC)) linkLayerState = BCC1_OK;
-                            else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                            else linkLayerState = START;
-                            break;
-                        case BCC1_OK:
-                            if (byteRead == FLAG) linkLayerState = STOP;
-                            else linkLayerState = START;
-                            break;    
-                        default:
-                            break;
-                    }
-                } 
+                readSupervisionFrame(&linkLayerState, A_RE, cValues, 1);
             }
-            nRetransmissions--;
+
+            if (alarmPlaying) {
+                retransmissions++;
+            }
         }
 
         if (linkLayerState != STOP) return -1;
@@ -378,42 +285,11 @@ int llclose(int showStatistics)
 
         break;
     case LlRx:
+        cValues[0] = C_UA;
         while (linkLayerState != STOP) {
-            nrBytesRead = readByte(&byteRead);
-            if (nrBytesRead < 0) {
-                //printf ("An error occurred while reading the SET frame\n");
-                break;
-            }
-            else if (nrBytesRead > 0) {
-                switch (linkLayerState)
-                {
-                case START:
-                    if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                    break;
-                case FLAG_RCV:
-                    if (byteRead == A_RE) linkLayerState = A_RCV;
-                    else if (byteRead != FLAG) linkLayerState = START;
-                    break;
-                case A_RCV:
-                    if (byteRead == C_UA) linkLayerState = C_RCV;
-                    else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                    else linkLayerState = START;
-                    break;
-                case C_RCV:
-                    if (byteRead == BCC(A_RE, C_UA)) linkLayerState = BCC1_OK;
-                    else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                    else linkLayerState = START;
-                    break;
-                case BCC1_OK:
-                    if (byteRead == FLAG) linkLayerState = STOP;
-                    else linkLayerState = START;
-                    break;    
-                default:
-                    break;
-                }
-            }
+            readSupervisionFrame(&linkLayerState, A_RE, cValues, 1);
         }
-
+  
         break;
     
     default:
@@ -459,102 +335,97 @@ unsigned char *byteStuffing(const unsigned char *buf, int bufSize, int *newSize)
 }
 
 int sendFrameS (unsigned char a, unsigned char c) {
-    char sFrame[5] = {FLAG, a, c, BCC(a,c), FLAG};
+    unsigned char sFrame[5] = {FLAG, a, c, BCC(a,c), FLAG};
     return writeBytes(sFrame, 5);
 }
 
-void readSupervisionFrame(LinkLayerState linkLayerState) {
-    char byteRead;
-    while (readByte(&byteRead) > 0) {
-        switch (linkLayerState)
-        {
-        case START:
-            if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-            break;
-        case FLAG_RCV:
-            if (byteRead == A_ER) linkLayerState = A_RCV;
-            else if (byteRead != FLAG) linkLayerState = START;
-            break;
-        case A_RCV:
-            if (byteRead == C_UA) linkLayerState = C_RCV;
-            else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-            else linkLayerState = START;
-            break;
-        case C_RCV:
-            if (byteRead == BCC(A_ER, C_UA)) linkLayerState = BCC1_OK;
-            else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-            else linkLayerState = START;
-            break;
-        case BCC1_OK:
-            if (byteRead == FLAG) {
-                linkLayerState = STOP;
-                return;
-            } else {
-                linkLayerState = START;
-            }
-            break;
-        default:
-            linkLayerState = START;
-            break;
-        }
-    }
-}
-
-
-
-unsigned char readCFrame() {
-    char byteRead;
+unsigned char readSupervisionFrame(LinkLayerState *linkLayerState, unsigned char a, unsigned char *cValues, int cValuesCount) {
+    unsigned char byteRead;
     unsigned char c = 0;
-    LinkLayerState linkLayerState = START;
 
-    while (linkLayerState != STOP && !alarmPlaying) {
-        int nrBytesRead = readByte(&byteRead);
-        if (nrBytesRead < 0) {
-            break;
-        }
-        else if (nrBytesRead > 0) {
-            switch (linkLayerState) {
-                case START:
-                    if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                    break;
-                case FLAG_RCV:
-                    if (byteRead == A_ER) linkLayerState = A_RCV;
-                    else if (byteRead != FLAG) linkLayerState = START;
-                    break;
-                case A_RCV:
-                    if ((byteRead & 0xFF) == C_RR(0) || (byteRead & 0xFF) == C_RR(1) || (byteRead & 0xFF) == C_REJ(0) || (byteRead & 0xFF) == C_REJ(1) || (byteRead & 0xFF) == C_DISC) {
-                        linkLayerState = C_RCV;
+    while (readByte(&byteRead) > 0) {
+        switch (*linkLayerState) {
+            case START:
+                if (byteRead == FLAG) *linkLayerState = FLAG_RCV;
+                break;
+            case FLAG_RCV:
+                if (byteRead == a) *linkLayerState = A_RCV;
+                else if (byteRead != FLAG) *linkLayerState = START;
+                break;
+            case A_RCV:
+                for (int i = 0; i < cValuesCount; i++) {
+                    if (byteRead == cValues[i]) {
+                        *linkLayerState = C_RCV;
                         c = byteRead;
-                    } else if (byteRead == FLAG) {
-                        linkLayerState = FLAG_RCV;
-                    } else {
-                        linkLayerState = START;
+                        break;
                     }
-                    break;
-                case C_RCV:
-                    if (byteRead == (A_ER ^ c)) linkLayerState = BCC1_OK;
-                    else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
-                    else linkLayerState = START;
-                    break;
-                case BCC1_OK:
-                    if (byteRead == FLAG) {
-                        linkLayerState = STOP;
-                    } else {
-                        linkLayerState = START;
-                    }
-                    break;
-                default:
-                    break;
-            }
+                }
+                if (*linkLayerState != C_RCV) {
+                    if (byteRead == FLAG) *linkLayerState = FLAG_RCV;
+                    else *linkLayerState = START;
+                }
+                break;
+            case C_RCV:
+                if (byteRead == BCC(a, c)) *linkLayerState = BCC1_OK;
+                else if (byteRead == FLAG) *linkLayerState = FLAG_RCV;
+                else *linkLayerState = START;
+                break;
+            case BCC1_OK:
+                if (byteRead == FLAG) {
+                    *linkLayerState = STOP;
+                    return c; 
+                } else {
+                    *linkLayerState = START;
+                }
+                break;
+            default:
+                *linkLayerState = START;
+                break;
         }
     }
-    return c;
+    return 0; 
 }
+
+void readSupervisionFrameRx(LinkLayerState *linkLayerState, unsigned char a, unsigned char *cValues, int cValuesCount) {
+    while (*linkLayerState != STOP) {
+        readSupervisionFrame(linkLayerState, A_ER, cValues, cValuesCount);
+    }
+}
+
+void sendSuperVisionFrameAndReadReply(LinkLayerState *linkLayerState, unsigned char a, unsigned char *cValues, int cValuesCount) {
+    int retransmissions = 0;
+    while (*linkLayerState != STOP && retransmissions < nRetransmissions) {
+        sendFrameS(A_ER, C_SET);
+        alarm(timeout);
+        alarmPlaying = FALSE;
+
+        while (!alarmPlaying && *linkLayerState != STOP) {
+            readSupervisionFrame(linkLayerState, A_ER, cValues, 1);
+
+        }
+        if (alarmPlaying) {
+            retransmissions++;
+        }
+    }
+    totalRetransmissions += retransmissions;
+}
+
+
+
 
 
 /*
 quizz 5 perguntas 15 minutos 
 
 sigaction em vez de signal()
+
+
+Perguntar ao professor se é preciso um alarme para transmitir o DISC do lado do receptor
+
+maybe falta ver o caso de receber algo repetido e ser necessário descartar
+também preciso ver o disconnect no caso do read, se precisa de alarme, ja q é comando
+
+
+se tiver repetido o buffer talvez possa retornar 0 no llread só
 
 */

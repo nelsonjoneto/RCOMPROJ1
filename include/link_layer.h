@@ -65,6 +65,7 @@ typedef struct
     int timeout;
 } LinkLayer;
 
+extern LinkLayerState linkLayerState; 
 
 // SIZE of maximum acceptable payload.
 // Maximum number of bytes that application layer should send to link layer
@@ -93,12 +94,14 @@ int llclose(int showStatistics);
 
 void alarmHandler(int signal);
 
-void readSupervisionFrame(LinkLayerState linkLayerState);
+unsigned char readSupervisionFrame(LinkLayerState *linkLayerState, unsigned char a, unsigned char *cValues, int cValuesCount);
 
 int sendFrameS (unsigned char a, unsigned char c);
 
 unsigned char *byteStuffing(const unsigned char *buf, int bufSize, int *newSize);
 
-unsigned char readCFrame();
+void readSupervisionFrameRx(LinkLayerState *linkLayerState, unsigned char a, unsigned char *cValues, int cValuesCount);
+
+void sendSuperVisionFrameAndReadReply(LinkLayerState *linkLayerState, unsigned char a, unsigned char *cValues, int cValuesCount);
 
 #endif // _LINK_LAYER_H_
