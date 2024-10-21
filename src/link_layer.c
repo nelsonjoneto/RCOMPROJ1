@@ -56,7 +56,7 @@ int llopen(LinkLayer connectionParameters)
                         if (byteRead == FLAG) linkLayerState = FLAG_RCV;
                         break;
                     case FLAG_RCV:
-                        if (byteRead == A_RE) linkLayerState = A_RCV;
+                        if (byteRead == A_ER) linkLayerState = A_RCV;
                         else if (byteRead != FLAG) linkLayerState = START;
                         break;
                     case A_RCV:
@@ -65,7 +65,7 @@ int llopen(LinkLayer connectionParameters)
                         else linkLayerState = START;
                         break;
                     case C_RCV:
-                        if (byteRead == BCC(A_RE, C_UA)) linkLayerState = BCC1_OK;
+                        if (byteRead == BCC(A_ER, C_UA)) linkLayerState = BCC1_OK;
                         else if (byteRead == FLAG) linkLayerState = FLAG_RCV;
                         else linkLayerState = START;
                         break;
@@ -119,7 +119,7 @@ int llopen(LinkLayer connectionParameters)
                 }
             }
         }
-        sendFrameS(A_RE,C_UA);
+        sendFrameS(A_ER,C_UA);
         break;
     default:
         return -1;
@@ -136,9 +136,10 @@ int llopen(LinkLayer connectionParameters)
 int llwrite(const unsigned char *buf, int bufSize)
 {
     printf("coiso 1\n");
-    int frameSize = bufSize + 6;
+    int frameSize = 2 * bufSize + 7;
     char *informationFrame = (char *)malloc(frameSize);
     if (!informationFrame) {
+        printf("Couldn't allocate memory for the information frame\n");
         return -1; 
     }
 
@@ -148,15 +149,15 @@ int llwrite(const unsigned char *buf, int bufSize)
     informationFrame[3] = BCC(informationFrame[1], informationFrame[2]);
 
   
-    int stuffedSize;
-    unsigned char *stuffedBuf = byteStuffing(buf, bufSize, &stuffedSize);
+    int stuffedDataSize;
+    unsigned char *stuffedBuf = byteStuffing(buf, bufSize, &stuffedDataSize);
     if (!stuffedBuf) {
         free(informationFrame);
         return -1;
     }
 
     printf("coiso 2\n");
-    memcpy(informationFrame + 4, stuffedBuf, stuffedSize);
+    memcpy(informationFrame + 4, stuffedBuf, stuffedDataSize);
 
  
     unsigned char bcc2 = buf[0];
@@ -165,8 +166,8 @@ int llwrite(const unsigned char *buf, int bufSize)
     }
 
 
-    int newStuffedSize;
-    unsigned char *stuffedBCC2 = byteStuffing(&bcc2, 1, &newStuffedSize);
+    int stuffedBBC2Size;
+    unsigned char *stuffedBCC2 = byteStuffing(&bcc2, 1, &stuffedBBC2Size);
     if (!stuffedBCC2) {
         free(stuffedBuf);
         free(informationFrame);
@@ -174,9 +175,10 @@ int llwrite(const unsigned char *buf, int bufSize)
     }
 
     printf("coiso 3\n");
-    memcpy(informationFrame + 4 + stuffedSize, stuffedBCC2, newStuffedSize);
-    informationFrame[4 + stuffedSize + newStuffedSize] = FLAG;
+    memcpy(informationFrame + 4 + stuffedDataSize, stuffedBCC2, stuffedBBC2Size);
+    informationFrame[4 + stuffedDataSize + stuffedBBC2Size] = FLAG;
 
+    frameSize = 5 + stuffedDataSize + stuffedBBC2Size;
 
     free(stuffedBuf);
     free(stuffedBCC2);
@@ -200,9 +202,9 @@ int llwrite(const unsigned char *buf, int bufSize)
 
 
             unsigned char c = readCFrame();
-            if (c == 0) {
-                continue; 
-            } else if (c == C_REJ(0) || c == C_REJ(1)) {
+            printf("c = %02X\n",c);
+
+            if (c == C_REJ(0) || c == C_REJ(1)) {
                 rejected = 1;
             } else if (c == C_RR(0) || c == C_RR(1)) {
                 accepted = 1; 
@@ -216,9 +218,11 @@ int llwrite(const unsigned char *buf, int bufSize)
         }
         currentTransmission++;
     }
-
+    
     free(informationFrame);
-    if (accepted) return frameSize;
+    if (accepted) {
+        return frameSize;
+    } 
     else {
         llclose(-1);
         return -1;
@@ -235,7 +239,7 @@ int llread(unsigned char *packet)
     int i = 0;
     LinkLayerState linkLayerState = START;
 
-    while (linkLayerState != STOP && !alarmPlaying) {
+    while (linkLayerState != STOP) {
         int nrBytesRead = readByte(&byteRead);
         if (nrBytesRead < 0) {
             //printf ("An error occurred while reading the SET frame\n");
@@ -261,6 +265,7 @@ int llread(unsigned char *packet)
                         linkLayerState = FLAG_RCV;
                     } else if (byteRead == C_DISC) {
                         sendFrameS(A_RE, C_DISC);
+                        //see if i need to check the rest
                         return 0;
                     } else {
                         linkLayerState = START;
@@ -287,10 +292,11 @@ int llread(unsigned char *packet)
                         
 
                         if (bcc2 == acc){
-                            printf("i entered here, i = %d\n", i);
+                            printf("I entered here, i = %d\n", i);
                             linkLayerState = STOP;
                             sendFrameS(A_RE, C_RR(tramaRx));
-                            tramaRx = (tramaRx + 1)%2;
+                            
+                            tramaRx = (tramaRx == 0) ? 1 : 0;
                             return i; 
 
                         } else{
@@ -300,7 +306,6 @@ int llread(unsigned char *packet)
                         }
 
                     } else {
-
                         packet[i++] = byteRead;
 
                     }
@@ -388,7 +393,9 @@ void alarmHandler(int signal) {
 }
 
 unsigned char *byteStuffing(const unsigned char *buf, int bufSize, int *newSize) {
+    
     int frameSize = bufSize;
+    
     for (int i = 0; i < bufSize; i++) {
         if (buf[i] == FLAG || buf[i] == ESC) {
             frameSize++;
@@ -424,9 +431,9 @@ unsigned char readCFrame() {
     LinkLayerState linkLayerState = START;
 
     while (linkLayerState != STOP && !alarmPlaying) {
+        printf("tou a ler uma control frame\n");
         int nrBytesRead = readByte(&byteRead);
         if (nrBytesRead < 0) {
-            //printf ("An error occurred while reading the SET frame\n");
             break;
         }
         else if (nrBytesRead > 0) {
@@ -439,7 +446,9 @@ unsigned char readCFrame() {
                     else if (byteRead != FLAG) linkLayerState = START;
                     break;
                 case A_RCV:
-                    if (byteRead == C_RR(0) || byteRead == C_RR(1) || byteRead == C_REJ(0) || byteRead == C_REJ(1) || byteRead == C_DISC) {
+                    printf("im wating for this c = %02X\n",byteRead); 
+                    if ((byteRead & 0xFF) == C_RR(0) || (byteRead & 0xFF) == C_RR(1) || (byteRead & 0xFF) == C_REJ(0) || (byteRead & 0xFF) == C_REJ(1) || (byteRead & 0xFF) == C_DISC) {
+                        printf("tou na lua\n");
                         linkLayerState = C_RCV;
                         c = byteRead;
                     } else if (byteRead == FLAG) {

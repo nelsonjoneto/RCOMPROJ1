@@ -26,8 +26,8 @@
 #define C_UA 0x07
 
 #define C_N(n) (n << 6)
-#define C_RR(n) ((n << 7) | 0x05)
-#define C_REJ(n) ((n << 7) | 0x01)
+#define C_RR(n) (0xAA + n)
+#define C_REJ(n) (0x54 + n)
 
 #define BCC(a,c) (a ^ c)
 #define ESC 0x7D
