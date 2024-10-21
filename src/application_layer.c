@@ -90,14 +90,17 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         }
 
         llclose(0);
+
         break;
 
     case LlRx:
 
         unsigned char* packet = (unsigned char *) malloc(MAX_PAYLOAD_SIZE);
-        int readControlPacketSize = -1;
+        int readControlPacketSize = 0;
         int size = -1;
         while ((readControlPacketSize = llread(packet)) < 0);
+
+        if (readControlPacketSize == 0) printf ("#asdasda\n");
 
         unsigned long int newFileSize = 0;
         unsigned char *fileName = processControlPacket(packet, &newFileSize);
@@ -114,12 +117,13 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         }
 
         while (1) {
-            while ((size = llread(packet)) <= 0);
+            while ((size = llread(packet)) < 0);
 
-            if (size < 0) break;
-            else if (packet[0] == 1) {
-                // Handle start control packet
+            if (size == 0) {
+                llclose(0);
+                break;
             }
+            
             else if (packet[0] == 2) {
                 unsigned char *buffer = (unsigned char*) malloc(size);
                 if (buffer == NULL) {
@@ -140,10 +144,12 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
                 free(buffer);
             }
-            else if (packet[0] == 3) break; 
+
+            else if (packet[0] == 3){
+                fclose(newFile);
+            }
         }
 
-        fclose(newFile);
         break;
 
     default:
@@ -155,13 +161,6 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
 unsigned char *processControlPacket(unsigned char* packet, unsigned long int *fileSize) {
     int i = 0;
-    
-    // Print the entire control packet for debugging
-    printf("Control Packet: ");
-    for (int k = 0; k < 20; k++) { // assuming the packet length is at least 20 for demonstration
-        printf("%02X ", packet[k]);
-    }
-    printf("\n");
 
     unsigned char controlField = packet[i++];
     if (controlField != 1 && controlField != 3) {
@@ -171,21 +170,17 @@ unsigned char *processControlPacket(unsigned char* packet, unsigned long int *fi
     unsigned char t1 = packet[i++];
     unsigned char l1 = packet[i++];
 
-    printf("Extracted t1: %d, l1: %d, Current index: %d\n", t1, l1, i);
-
     *fileSize = 0;
     for (int j = 0; j < l1; j++) {
         *fileSize = (*fileSize << 8) | packet[i++];
     }
 
-    printf("Extracted file size: %lu\n", *fileSize);
 
     unsigned char t2 = packet[i++];
     unsigned char l2 = packet[i++];
 
-    printf("Extracted t2: %d, l2: %d, Current index: %d\n", t2, l2, i);
 
-    if (l2 < 1 || i + l2 > 20) { // assuming the packet length is at least 20 for demonstration
+    if (l2 < 1 || i + l2 > 20) { 
         return NULL;
     }
 
@@ -193,10 +188,9 @@ unsigned char *processControlPacket(unsigned char* packet, unsigned long int *fi
     if (!fileName) {
         return NULL;
     }
+
     memcpy(fileName, packet + i, l2);
     fileName[l2] = '\0';
-
-    printf("Extracted fileName: %s\n", fileName);
 
     return fileName;
 }
@@ -238,12 +232,6 @@ unsigned char * buildControlPacket(const unsigned int c, const char* filename, l
 
 
     memcpy(controlPacket + i, filename, l2);
-
-    printf("Control Packet: ");
-    for (int k = 0; k < *size; k++) {
-        printf("%02X ", controlPacket[k]);
-    }
-    printf("\n");
     
     return controlPacket;
 }
@@ -270,8 +258,6 @@ unsigned char *buildDataPacket(unsigned char sequenceNumber, unsigned char *data
 }
 
 void processDataPacket (unsigned char* packet, int size, unsigned char* buffer) {
-    //unsigned char controlField = packet[0];
-    //unsigned char sequenceNumber = packet[1];
     unsigned char l2 = packet[2];
     unsigned char l1 = packet[3];
     int length = 256 * l2 + l1;

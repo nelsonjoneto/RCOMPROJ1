@@ -32,6 +32,8 @@
 #define BCC(a,c) (a ^ c)
 #define ESC 0x7D
 
+#define ROLE_TX 0
+#define ROLE_RX 1
 
 
 typedef enum
@@ -63,6 +65,7 @@ typedef struct
     int timeout;
 } LinkLayer;
 
+
 // SIZE of maximum acceptable payload.
 // Maximum number of bytes that application layer should send to link layer
 #define MAX_PAYLOAD_SIZE 1000
@@ -89,6 +92,8 @@ int llread(unsigned char *packet);
 int llclose(int showStatistics);
 
 void alarmHandler(int signal);
+
+void readSupervisionFrame(LinkLayerState linkLayerState);
 
 int sendFrameS (unsigned char a, unsigned char c);
 
