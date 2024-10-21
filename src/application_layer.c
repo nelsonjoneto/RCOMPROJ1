@@ -21,7 +21,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     linkLayer.baudRate = baudRate;
     linkLayer.nRetransmissions = nTries;
     linkLayer.timeout = timeout;
-    strcpy(linkLayer.serialPort,serialPort);
+    strcpy(linkLayer.serialPort, serialPort);
     linkLayer.role = strcmp(role, "tx") ? LlRx : LlTx;
 
     int fd = llopen(linkLayer);
@@ -40,66 +40,58 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             exit(-1);
         }
 
-        int prev = ftell(file);
         fseek(file, 0L, SEEK_END);
-        long int fileSize = ftell(file) - prev;
-        fseek(file, prev, SEEK_SET);
-
+        long int fileSize = ftell(file);
+        fseek(file, 0L, SEEK_SET);
 
         unsigned int controlPacketSize;
         unsigned char *startControlPacket = buildControlPacket(1, filename, fileSize, &controlPacketSize);
         
-        
-        if(llwrite(startControlPacket, controlPacketSize) == -1){
+        if (llwrite(startControlPacket, controlPacketSize) == -1) {
             printf("Error: Couldn't write starter control packet\n");
             exit(-1);
         }
 
-        
         unsigned char sequenceNumber = 0;
-
-        unsigned char* fullData = (unsigned char*) malloc (sizeof (unsigned char) * fileSize);
+        unsigned char* fullData = (unsigned char*) malloc(sizeof(unsigned char) * fileSize);
         fread(fullData, sizeof(unsigned char), fileSize, file);
 
         long int bytes = fileSize;
-        
+        long int offset = 0;
 
         while (bytes > 0)
         {
             int dataToSendSize = bytes > (long int) MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : bytes;
-
             unsigned char* dataToSend = (unsigned char *) malloc(dataToSendSize);
 
-            memcpy(dataToSend, fullData, dataToSendSize);
+            memcpy(dataToSend, fullData + offset, dataToSendSize);
 
             int dataPacketSize;
-
             unsigned char *dataPacket = buildDataPacket(sequenceNumber, dataToSend, dataToSendSize, &dataPacketSize);
-
-            printf("DataPacketSize = %d\n", dataPacketSize);
 
             if (llwrite(dataPacket, dataPacketSize) == -1) {
                 printf("Error: Couldn't write data packet\n");
                 exit(-1);
             }
 
-            bytes -= (long int) dataToSendSize;
-
-            fullData += dataToSendSize;
-
+            bytes -= dataToSendSize;
+            offset += dataToSendSize;
             sequenceNumber = (sequenceNumber + 1) % 0xFF;
+
+            free(dataToSend);
+            free(dataPacket);
         }
-        
-        
+
         unsigned char *endControlPacket = buildControlPacket(3, filename, fileSize, &controlPacketSize);
         
-        if(llwrite(endControlPacket, controlPacketSize) == -1){ 
+        if (llwrite(endControlPacket, controlPacketSize) == -1) { 
             printf("Error: Couldn't write end control packet\n");
             exit(-1);
         }
 
         llclose(0);
         break;
+
     case LlRx:
 
         unsigned char* packet = (unsigned char *) malloc(MAX_PAYLOAD_SIZE);
@@ -107,51 +99,35 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         int size = -1;
         while ((readControlPacketSize = llread(packet)) < 0);
 
-        printf("it was sent a first time\n");
-        for (int q = 0; q < readControlPacketSize; q++) {
-            printf("%02X ", packet[q]);
-        }
-
         unsigned long int newFileSize = 0;
-
         unsigned char *fileName = processControlPacket(packet, &newFileSize);
         if (fileName == NULL) {
             printf("Error: fileName is NULL\n");
             exit(EXIT_FAILURE);
         }
 
-        printf("%s\n",fileName);
-
         fileName = filename;
-
         FILE *newFile = fopen((char *) fileName, "wb+");
         if (newFile == NULL) {
             perror("Error opening file for writing");
             exit(EXIT_FAILURE);
         }
 
-        while(1) {
-
+        while (1) {
             while ((size = llread(packet)) <= 0);
-            printf("it was sent a second time\n");
-            for (int q = 0; q < size; q++) {
-                printf("%02X ", packet[q]);
-            }
-            printf("\n");
-    
+
             if (size < 0) break;
             else if (packet[0] == 1) {
-                printf("the fuck happened here\n");
+                // Handle start control packet
             }
-            else if(packet[0] == 2){
-                unsigned char *buffer = (unsigned char*)malloc(size);
+            else if (packet[0] == 2) {
+                unsigned char *buffer = (unsigned char*) malloc(size);
                 if (buffer == NULL) {
                     perror("Memory allocation failed for buffer");
                     exit(EXIT_FAILURE);
                 }
 
                 processDataPacket(packet, size, buffer);
-
 
                 if (size - 4 > 0) {
                     size_t written = fwrite(buffer, sizeof(unsigned char), size - 4, newFile);
@@ -162,18 +138,14 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                     fprintf(stderr, "Invalid size to write: %d\n", size - 4);
                 }
 
-
-                fwrite(buffer, sizeof(unsigned char), size - 4, newFile);
-
-                printf("good good my name is good\n");
-
                 free(buffer);
             }
-            else if(packet[0] == 3) break; 
+            else if (packet[0] == 3) break; 
         }
 
         fclose(newFile);
         break;
+
     default:
         exit(-1);
         break;
