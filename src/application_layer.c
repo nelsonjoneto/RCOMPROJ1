@@ -118,13 +118,8 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
         while (1) {
             while ((size = llread(packet)) < 0);
-
-            if (size == 0) {
-                llclose(0);
-                break;
-            }
             
-            else if (packet[0] == 2) {
+            if (packet[0] == 2 && size != 0) {
                 unsigned char *buffer = (unsigned char*) malloc(size);
                 if (buffer == NULL) {
                     perror("Memory allocation failed for buffer");
@@ -146,7 +141,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             }
 
             else if (packet[0] == 3){
+                llclose(1);
                 fclose(newFile);
+                break;
             }
         }
 

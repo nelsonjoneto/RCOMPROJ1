@@ -128,15 +128,14 @@ int llwrite(const unsigned char *buf, int bufSize)
     LinkLayerState linkLayerState = START;
     unsigned char cValues[] = {C_RR(0), C_RR(1), C_REJ(0), C_REJ(1), C_DISC};
     unsigned char c = 0;
-    printf("New data transmission\n");
     while (retransmissions < nRetransmissions) {
         alarm(timeout);
         alarmPlaying = FALSE;
-
+               
         if (writeBytes(informationFrame, frameSize) < 0) {
             free(informationFrame);
             return -1;
-        }
+        } else printf ("Frame sent\n");
         
         while (!alarmPlaying) {
             unsigned char c = readSupervisionFrame(&linkLayerState, A_ER, cValues, 5);
@@ -151,7 +150,7 @@ int llwrite(const unsigned char *buf, int bufSize)
 
             } else continue;
         }
-        printf("Retransmitting frame\n");
+
         retransmissions++;
 
     }
@@ -161,6 +160,7 @@ int llwrite(const unsigned char *buf, int bufSize)
     return -1;
 }
 
+unsigned char currentFrameNum = 0;
 
 ////////////////////////////////////////////////
 // LLREAD
@@ -172,7 +172,6 @@ int llread(unsigned char *packet)
     unsigned char c;
     int i = 0;
     linkLayerState = START;
-
 
 
     while (linkLayerState != STOP) {
@@ -195,9 +194,6 @@ int llread(unsigned char *packet)
                         c = byteRead;
                     } else if (byteRead == FLAG) {
                         linkLayerState = FLAG_RCV;
-                    } else if (byteRead == C_DISC) {
-                        sendFrameS(A_RE, C_DISC);
-                        return 0;
                     } else {
                         linkLayerState = START;
                     }
@@ -221,11 +217,15 @@ int llread(unsigned char *packet)
                         
 
                         if (bcc2 == acc){
-                            linkLayerState = STOP;
-                            sendFrameS(A_ER, C_RR(tramaRx));
-                            
-                            tramaRx = (tramaRx == 0) ? 1 : 0;
-                            return i; 
+                            if (C_N(currentFrameNum) == c) {
+                                currentFrameNum = (currentFrameNum == 0) ? 1 : 0;
+                                sendFrameS(A_ER, C_RR(tramaRx));
+                                tramaRx = (tramaRx == 0) ? 1 : 0;
+                                return i;
+                            } else {
+                                sendFrameS(A_ER, C_RR(currentFrameNum));
+                                return 0;
+                            }
 
                         } else{
                             sendFrameS(A_ER, C_REJ(tramaRx));
@@ -256,16 +256,15 @@ int llread(unsigned char *packet)
 ////////////////////////////////////////////////
 int llclose(int showStatistics)
 {   
+    (void) signal(SIGALRM, alarmHandler);
     LinkLayerState linkLayerState = START;
-    unsigned char cValues[1];
+    unsigned char cValues[1] = {C_DISC};
 
     int retransmissions = 0;
 
     switch (role)
     {
     case LlTx:
-        cValues[0] = C_DISC;
-        (void) signal(SIGALRM, alarmHandler);
         while (retransmissions < nRetransmissions && linkLayerState != STOP) {
             sendFrameS(A_ER, C_DISC);
             alarm(timeout);
@@ -279,17 +278,32 @@ int llclose(int showStatistics)
                 retransmissions++;
             }
         }
-
         if (linkLayerState != STOP) return -1;
         sendFrameS(A_RE, C_UA);
 
         break;
     case LlRx:
-        cValues[0] = C_UA;
         while (linkLayerState != STOP) {
-            readSupervisionFrame(&linkLayerState, A_RE, cValues, 1);
+            readSupervisionFrame(&linkLayerState, A_ER, cValues, 1);
         }
-  
+        cValues[0] = C_UA;
+        retransmissions = 0;
+        linkLayerState = START;
+        while (retransmissions < nRetransmissions && linkLayerState != STOP) {
+            sendFrameS(A_RE, C_DISC);
+            alarm(timeout);
+            alarmPlaying = FALSE;
+
+            while (!alarmPlaying && linkLayerState != STOP) {
+                readSupervisionFrame(&linkLayerState, A_RE, cValues, 1);
+            }
+
+            if (alarmPlaying) {
+                retransmissions++;
+            }
+        }
+
+        if (linkLayerState != STOP) return -1;
         break;
     
     default:
@@ -392,15 +406,15 @@ void readSupervisionFrameRx(LinkLayerState *linkLayerState, unsigned char a, uns
     }
 }
 
-void sendSuperVisionFrameAndReadReply(LinkLayerState *linkLayerState, unsigned char a, unsigned char *cValues, int cValuesCount) {
+void sendSuperVisionFrameAndReadReply(LinkLayerState *linkLayerState, unsigned char a, unsigned char c, unsigned char *cValues, int cValuesCount) {
     int retransmissions = 0;
     while (*linkLayerState != STOP && retransmissions < nRetransmissions) {
-        sendFrameS(A_ER, C_SET);
+        sendFrameS(a, c);
         alarm(timeout);
         alarmPlaying = FALSE;
 
         while (!alarmPlaying && *linkLayerState != STOP) {
-            readSupervisionFrame(linkLayerState, A_ER, cValues, 1);
+            readSupervisionFrame(linkLayerState, a, cValues, 1);
 
         }
         if (alarmPlaying) {
@@ -421,11 +435,8 @@ sigaction em vez de signal()
 
 
 Perguntar ao professor se é preciso um alarme para transmitir o DISC do lado do receptor
-
-maybe falta ver o caso de receber algo repetido e ser necessário descartar
-também preciso ver o disconnect no caso do read, se precisa de alarme, ja q é comando
-
-
-se tiver repetido o buffer talvez possa retornar 0 no llread só
+Ver como funciona bem o caso de desconexão dos dois lados, porque há um comando como resposta de um comando
+Perguntar ao professor se um reject conta como uma try 
+Perguntar se 3 tries falhar é muito mau?
 
 */

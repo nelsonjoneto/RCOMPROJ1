@@ -25,7 +25,7 @@
 #define C_DISC 0x0B
 #define C_UA 0x07
 
-#define C_N(n) (n << 6)
+#define C_N(n) (n << 7)
 #define C_RR(n) (0xAA + n)
 #define C_REJ(n) (0x54 + n)
 
@@ -102,6 +102,6 @@ unsigned char *byteStuffing(const unsigned char *buf, int bufSize, int *newSize)
 
 void readSupervisionFrameRx(LinkLayerState *linkLayerState, unsigned char a, unsigned char *cValues, int cValuesCount);
 
-void sendSuperVisionFrameAndReadReply(LinkLayerState *linkLayerState, unsigned char a, unsigned char *cValues, int cValuesCount);
+void sendSuperVisionFrameAndReadReply(LinkLayerState *linkLayerState, unsigned char a, unsigned char c, unsigned char *cValues, int cValuesCount);
 
 #endif // _LINK_LAYER_H_
