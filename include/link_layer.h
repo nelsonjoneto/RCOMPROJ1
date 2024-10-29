@@ -94,14 +94,14 @@ int llclose(int showStatistics);
 
 void alarmHandler(int signal);
 
-unsigned char readSupervisionFrame(LinkLayerState *linkLayerState, unsigned char a, unsigned char *cValues, int cValuesCount);
+unsigned char readSupervisionFrame(unsigned char a, unsigned char *cValues, int cValuesCount);
 
 int sendFrameS (unsigned char a, unsigned char c);
 
 unsigned char *byteStuffing(const unsigned char *buf, int bufSize, int *newSize);
 
-void readSupervisionFrameRx(LinkLayerState *linkLayerState, unsigned char a, unsigned char *cValues, int cValuesCount);
+void readSupervisionFrameRx(unsigned char a, unsigned char *cValues, int cValuesCount);
 
-void sendSuperVisionFrameAndReadReply(LinkLayerState *linkLayerState, unsigned char a, unsigned char c, unsigned char *cValues, int cValuesCount);
+void sendSuperVisionFrameAndReadReply(unsigned char a, unsigned char c, unsigned char *cValues, int cValuesCount);
 
 #endif // _LINK_LAYER_H_

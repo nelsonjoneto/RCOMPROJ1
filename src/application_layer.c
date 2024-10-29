@@ -76,7 +76,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
             bytes -= dataToSendSize;
             offset += dataToSendSize;
-            sequenceNumber = (sequenceNumber + 1) % 0xFF;
+            sequenceNumber = (sequenceNumber + 1) % 99;
 
             free(dataToSend);
             free(dataPacket);
@@ -89,7 +89,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             exit(-1);
         }
 
-        llclose(0);
+        llclose(1);
 
         break;
 
