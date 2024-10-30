@@ -26,7 +26,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
     int fd = llopen(linkLayer);
     if (fd < 0) {
-        perror("Error: Connection establish connection\n\n");
+        perror("Error: Couldn't establish connection\n\n");
         exit(EXIT_FAILURE);
     }
     printf("Connection was established\n\n");
