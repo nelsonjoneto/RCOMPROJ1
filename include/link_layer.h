@@ -92,7 +92,7 @@ int llread(unsigned char *packet);
 // Return "1" on success or "-1" on error.
 int llclose(int showStatistics);
 
-void alarmHandler(int signal);
+/*void alarmHandler(int signal);
 
 unsigned char readSupervisionFrame(unsigned char a, unsigned char *cValues, int cValuesCount);
 
@@ -102,6 +102,6 @@ unsigned char *byteStuffing(const unsigned char *buf, int bufSize, int *newSize)
 
 void readSupervisionFrameRx(unsigned char a, unsigned char *cValues, int cValuesCount);
 
-void sendSuperVisionFrameAndReadReply(unsigned char a, unsigned char c, unsigned char *cValues, int cValuesCount);
+void sendSuperVisionFrameAndReadReply(unsigned char a, unsigned char c, unsigned char *cValues, int cValuesCount);*/
 
 #endif // _LINK_LAYER_H_

@@ -230,7 +230,6 @@ unsigned char *processControlPacket(unsigned char* packet, unsigned long int *fi
     return fileName;
 }
 
-
 unsigned char * buildControlPacket(const unsigned int c, const char* filename, long int length, unsigned int* size) {
 
     int l1 = 0;
@@ -287,8 +286,6 @@ unsigned char *buildDataPacket(unsigned char sequenceNumber, unsigned char *data
     memcpy(dataPacket + 4, data, dataSize);
 
     return dataPacket;
-
-    
 }
 
 void processDataPacket (unsigned char* packet, int size, unsigned char* buffer) {

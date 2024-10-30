@@ -282,18 +282,11 @@ int llclose(int showStatistics)
         sendFrameS(A_RE, C_UA);
 
         endTime = clock();
-        if (showStatistics) {
-            cpuTimeUsed = ((double)(endTime - startTime)) / CLOCKS_PER_SEC;
-            printf("\nCommunication Statistics:\n");
-            printf("Time Used: %f seconds\n", cpuTimeUsed);
-            printf("Number of frames sent: %d\n", totalFramesSent);
-            printf("Number of frames rejected: %d\n", totalRejections);
-            printf("Number of timeouts: %d\n", totalTimeouts);
-            printf("Number of retransmissions: %d\n", totalTimeouts + totalRejections);
-            printf("\nNumber of frames received: %d\n", totalFramesRead);
-        }
+
+        printStatistics(showStatistics, role);
 
         break;
+        
     case LlRx:
         readSupervisionFrameRx(A_ER, cValuesTx, 1);
         linkLayerState = START;
@@ -301,18 +294,8 @@ int llclose(int showStatistics)
 
         if (linkLayerState != STOP) printf("Error: Unnumbered Acknowledgment wasn't received.");
         endTime = clock();
-        if (showStatistics) {
-            cpuTimeUsed = ((double)(endTime - startTime)) / CLOCKS_PER_SEC;
-            printf("\nCommunication Statistics:\n");
-            printf("Time Used: %f seconds\n", cpuTimeUsed);
-            printf("Number of frames sent: %d\n", totalFramesSent);
-            printf("Number of timeouts: %d\n", totalTimeouts);
-            printf("Number of retransmissions: %d\n", totalTimeouts);
 
-            printf("\nNumber of frames received: %d\n", totalFramesRead);
-            printf("Number of duplicate frames: %d\n", totalDuplicates);
-            printf("Number of frames rejected: %d\n", totalRejections);
-        }
+        printStatistics(showStatistics, role);
         
         break;
     
@@ -320,11 +303,32 @@ int llclose(int showStatistics)
         return -1;
     }
 
-
-
-
     int clstat = closeSerialPort();
     return clstat;
+}
+
+void printStatistics(int showStatistics, int role) {
+
+    if (showStatistics) {
+
+        double cpuTimeUsed = ((double)(endTime - startTime)) / CLOCKS_PER_SEC;
+
+        printf("\nCommunication Statistics:\n");
+
+        printf("Time used: %f seconds\n", cpuTimeUsed);
+        printf("Number of frames sent: %d\n", totalFramesSent);
+        printf("Number of frames rejected: %d\n", totalRejections);
+        printf("Number of timeouts: %d\n", totalTimeouts);
+        
+        if (role == LlTx) {
+            printf("Number of retransmissions: %d\n", totalTimeouts + totalRejections);
+        } else if (role == LlRx) {
+            printf("Number of retransmissions: %d\n", totalTimeouts); // equal to timeouts
+            printf("Number of duplicate frames: %d\n", totalDuplicates); // only on receiver
+        }
+
+        printf("\nNumber of frames received: %d\n", totalFramesRead);
+    }
 }
 
 void alarmHandler(int signal) {
