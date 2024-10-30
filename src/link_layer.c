@@ -19,6 +19,8 @@ LinkLayerRole role;
 LinkLayerState linkLayerState;
 
 int totalFramesSent, totalFramesRead, totalTimeouts, totalRejections, totalDuplicates = 0;
+clock_t startTime, endTime;
+double cpuTimeUsed;
 
 
 int llopen(LinkLayer connectionParameters)
@@ -33,23 +35,20 @@ int llopen(LinkLayer connectionParameters)
     timeout = connectionParameters.timeout;
     role = connectionParameters.role;
 
+    unsigned char cValuesTx[] = {C_UA};
+    unsigned char cValuesRx[] = {C_SET};
     switch (role)
     {
     case LlTx:
-        unsigned char cValuesTx[] = {C_UA};
+        startTime = clock();
         sendSuperVisionFrameAndReadReply(A_ER, C_SET, cValuesTx, 1);
-        if (linkLayerState != STOP) {
-            printf("Error: Couldn't establish connection\n");
-            return -1;
-        }
-        printf("Connection was established\n");
+        if (linkLayerState != STOP) return -1;
         break;
 
     case LlRx:
-        unsigned char cValuesRx[] = {C_SET};
+        startTime = clock();
         readSupervisionFrameRx(A_ER, cValuesRx, 1);
-        sendFrameS(A_ER,C_UA);
-        printf("Connection was established\n");
+        if (sendFrameS(A_ER,C_UA) < 0) return -1;
         break;
     default:
         return -1;
@@ -138,7 +137,6 @@ int llwrite(const unsigned char *buf, int bufSize)
                     break;
                 } 
                 if (c == C_RR(0) || c == C_RR(1)) {
-                    printf("Information frame successfully sent: %d bytes written\n", frameSize);
                     tramaTx = (tramaTx == 0) ? 1 : 0;
                     free(informationFrame);
                     return frameSize;
@@ -216,7 +214,6 @@ int llread(unsigned char *packet)
 
                         if (bcc2 == acc){
                             if (C_N(currentFrameNum) == c) {
-                                printf("Information frame accepted: %d bytes read\n", i);
                                 currentFrameNum = (currentFrameNum == 0) ? 1 : 0;
                                 sendFrameS(A_ER, C_RR(tramaRx));
                                 tramaRx = (tramaRx == 0) ? 1 : 0;
@@ -260,8 +257,8 @@ int llclose(int showStatistics)
 {
 
     linkLayerState = START;
-    unsigned char cValues[1] = {C_DISC};
-
+    unsigned char cValuesTx[1] = {C_DISC};
+    unsigned char cValuesRx[1] = {C_UA};
     int retransmissions = 0;
 
     switch (role)
@@ -273,7 +270,7 @@ int llclose(int showStatistics)
             alarmPlaying = FALSE;
 
             while (!alarmPlaying && linkLayerState != STOP) {
-                readSupervisionFrame(A_RE, cValues, 1);
+                readSupervisionFrame(A_RE, cValuesTx, 1);
             }
 
             if (alarmPlaying) {
@@ -282,8 +279,13 @@ int llclose(int showStatistics)
         }
         if (linkLayerState != STOP) return -1;
 
+        sendFrameS(A_RE, C_UA);
+
+        endTime = clock();
         if (showStatistics) {
+            cpuTimeUsed = ((double)(endTime - startTime)) / CLOCKS_PER_SEC;
             printf("\nCommunication Statistics:\n");
+            printf("Time Used: %f seconds\n", cpuTimeUsed);
             printf("Number of frames sent: %d\n", totalFramesSent);
             printf("Number of frames rejected: %d\n", totalRejections);
             printf("Number of timeouts: %d\n", totalTimeouts);
@@ -291,20 +293,18 @@ int llclose(int showStatistics)
             printf("\nNumber of frames received: %d\n", totalFramesRead);
         }
 
-        sendFrameS(A_RE, C_UA);
-
         break;
     case LlRx:
-        readSupervisionFrameRx(A_ER, cValues, 1);
-        cValues[0] = C_UA;
+        readSupervisionFrameRx(A_ER, cValuesTx, 1);
         linkLayerState = START;
-        sendSuperVisionFrameAndReadReply(A_RE, C_DISC, cValues, 1);
+        sendSuperVisionFrameAndReadReply(A_RE, C_DISC, cValuesRx, 1);
 
         if (linkLayerState != STOP) printf("Error: Unnumbered Acknowledgment wasn't received.");
-        printf("\nConnection closed\n");
-
+        endTime = clock();
         if (showStatistics) {
+            cpuTimeUsed = ((double)(endTime - startTime)) / CLOCKS_PER_SEC;
             printf("\nCommunication Statistics:\n");
+            printf("Time Used: %f seconds\n", cpuTimeUsed);
             printf("Number of frames sent: %d\n", totalFramesSent);
             printf("Number of timeouts: %d\n", totalTimeouts);
             printf("Number of retransmissions: %d\n", totalTimeouts);
@@ -313,12 +313,16 @@ int llclose(int showStatistics)
             printf("Number of duplicate frames: %d\n", totalDuplicates);
             printf("Number of frames rejected: %d\n", totalRejections);
         }
+        
         break;
     
     default:
         return -1;
     }
-   
+
+
+
+
     int clstat = closeSerialPort();
     return clstat;
 }
